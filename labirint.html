@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="UTF-8">
+<title>Labirint – Svit Menard</title>
+<style>
+  body {
+    text-align: center;
+    font-family: Arial;
+    background: url('slike/back.jpg');
+    background-size: 100% 100%;
+    background-attachment: fixed;
+  }
+
+  canvas {
+    border: 2px solid black;
+    margin-top: 10px;
+    background-color: white;
+  }
+</style>
+</head>
+<body>
+
+<h2>Labirint – Svit Menard</h2>
+
+Širina:
+<input type="number" id="w" value="30" min="5">
+Višina:
+<input type="number" id="h" value="30" min="5">
+
+<br><br>
+<button onclick="generate()">Generiraj</button>
+<button onclick="animateSolution()">Prikaži rešitev</button>
+
+<br>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let cols, rows;
+let cell = 20;
+let maze = [];
+let solutionPath = [];
+let carIndex = 0;
+let animationRunning = false; 
+
+function generate() {
+  cols = +document.getElementById("w").value;
+  rows = +document.getElementById("h").value;
+
+  canvas.width = cols * cell;
+  canvas.height = rows * cell;
+
+  carIndex = 0;
+  solutionPath = [];
+  animationRunning = false;
+
+  createMaze();
+
+  maze[0][0].walls[0] = false;
+  maze[rows-1][cols-1].walls[2] = false;
+
+  drawMaze();
+}
+
+function createMaze() {
+  maze = Array.from({ length: rows }, (_, y) =>
+    Array.from({ length: cols }, (_, x) => ({
+      x, y,
+      walls: [true, true, true, true],
+      visited: false
+    }))
+  );
+  dfs(0, 0);
+}
+
+function dfs(x, y) {
+  maze[y][x].visited = true;
+  shuffle([[0,-1,0,2],[1,0,1,3],[0,1,2,0],[-1,0,3,1]]).forEach(([dx,dy,w1,w2]) => {
+    let nx = x + dx, ny = y + dy;
+    if (nx>=0 && ny>=0 && nx<cols && ny<rows && !maze[ny][nx].visited) {
+      maze[y][x].walls[w1] = false;
+      maze[ny][nx].walls[w2] = false;
+      dfs(nx, ny);
+    }
+  });
+}
+
+function shuffle(a) { return a.sort(() => Math.random() - 0.5); }
+
+function drawMaze() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle = "black";
+  ctx.lineWidth = 2;
+
+  maze.flat().forEach(c => {
+    let x = c.x * cell;
+    let y = c.y * cell;
+    if (c.walls[0]) line(x,y,x+cell,y);
+    if (c.walls[1]) line(x+cell,y,x+cell,y+cell);
+    if (c.walls[2]) line(x+cell,y+cell,x,y+cell);
+    if (c.walls[3]) line(x,y+cell,x,y);
+  });
+
+  // vhod
+  ctx.fillStyle = "green";
+  ctx.fillRect(cell/4, cell/4, cell/2, cell/2);
+
+  let gx = (cols-1)*cell;
+  let gy = (rows-1)*cell;
+  let size = cell/2;
+  let padding = cell/4;
+
+  ctx.fillStyle = "black";
+  ctx.fillRect(gx + padding, gy + padding, size/2, size/2);
+  ctx.fillRect(gx + padding + size/2, gy + padding + size/2, size/2, size/2);
+
+  ctx.fillStyle = "white";
+  ctx.fillRect(gx + padding + size/2, gy + padding, size/2, size/2);
+  ctx.fillRect(gx + padding, gy + padding + size/2, size/2, size/2);
+}
+
+function line(x1,y1,x2,y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+}
+
+function calculateSolution() {
+  let stack = [[0,0]];
+  let visited = new Set();
+  let parent = {};
+
+  while (stack.length) {
+    let [x,y] = stack.pop();
+    if (x === cols-1 && y === rows-1) break;
+    visited.add(`${x},${y}`);
+
+    maze[y][x].walls.forEach((w,i) => {
+      if (!w) {
+        let d = [[0,-1],[1,0],[0,1],[-1,0]][i];
+        let nx = x + d[0], ny = y + d[1];
+        if (!visited.has(`${nx},${ny}`)) {
+          parent[`${nx},${ny}`] = [x,y];
+          stack.push([nx,ny]);
+        }
+      }
+    });
+  }
+
+  solutionPath = [];
+  let p = [cols-1, rows-1];
+  while (p) {
+    solutionPath.push(p);
+    p = parent[`${p[0]},${p[1]}`];
+  }
+  solutionPath.reverse();
+}
+
+function drawRoadCell(x, y) {
+  const c = maze[y][x];
+  const padding = 2;
+  ctx.fillStyle = "#555";
+  
+  let x0 = x*cell + padding;
+  let y0 = y*cell + padding;
+  let w = cell - padding*2;
+  let h = cell - padding*2;
+
+  if (!c.walls[0]) y0 -= padding; h += padding; 
+  if (!c.walls[1]) w += padding;               
+  if (!c.walls[2]) h += padding;               
+  if (!c.walls[3]) x0 -= padding; w += padding; 
+
+  ctx.fillRect(x0, y0, w, h);
+}
+
+function drawCenterLine(x, y, prev) {
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6,6]);
+
+  ctx.beginPath();
+  ctx.moveTo(prev[0]*cell + cell/2, prev[1]*cell + cell/2);
+  ctx.lineTo(x*cell + cell/2, y*cell + cell/2);
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+}
+
+function drawCar(x, y) {
+  const cx = x * cell + cell / 2;
+  const cy = y * cell + cell / 2;
+
+  ctx.fillStyle = "red";
+  ctx.fillRect(cx - 7, cy - 5, 14, 10);
+
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.arc(cx - 4, cy + 5, 2, 0, Math.PI * 2);
+  ctx.arc(cx + 4, cy + 5, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function animateSolution() {
+  if (animationRunning) return;
+  if (solutionPath.length === 0) calculateSolution();
+
+  animationRunning = true;
+  carIndex = 0;
+
+  function step() {
+    if (carIndex >= solutionPath.length) {
+      animationRunning = false;
+      return;
+    }
+
+    drawMaze();
+
+    for (let i = 0; i <= carIndex; i++) {
+      let [x, y] = solutionPath[i];
+      drawRoadCell(x, y);
+      if (i > 0) drawCenterLine(x, y, solutionPath[i-1]);
+    }
+
+    let [cx, cy] = solutionPath[carIndex];
+    drawCar(cx, cy);
+
+    carIndex++;
+    setTimeout(step, 60);
+  }
+
+  step();
+}
+</script>
+
+</body>
+</html>
